@@ -25,6 +25,7 @@ export interface SessionReport {
   final_calm: number;
   final_cognitive_load: number;
   final_brain_balance: number;
+  audio_path?: string | null;
   timeline: TimelinePoint[];
   created_at: string;
 }

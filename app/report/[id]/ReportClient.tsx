@@ -19,6 +19,7 @@ import {
 interface Props {
   report: SessionReport;
   previousSessions: PreviousSession[];
+  audioUrl: string | null;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -221,7 +222,7 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>)
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function ReportClient({ report, previousSessions }: Props) {
+export default function ReportClient({ report, previousSessions, audioUrl }: Props) {
   const timeline: TimelinePoint[] = report.timeline ?? [];
 
   const chartData = timeline.map((p) => ({

@@ -48,10 +48,22 @@ export default async function ReportPage({
     .order('created_at', { ascending: false })
     .limit(5);
 
+  // Generate a short-lived signed URL for the private audio file.
+  // The path stored in audio_path is never a public URL — access is only
+  // granted here, per report load, and expires after 1 hour.
+  let audioUrl: string | null = null;
+  if (report.audio_path) {
+    const { data: signed } = await supabase.storage
+      .from('session-audio')
+      .createSignedUrl(report.audio_path, 60 * 60); // 1-hour expiry
+    audioUrl = signed?.signedUrl ?? null;
+  }
+
   return (
     <ReportClient
       report={report as SessionReport}
       previousSessions={(previousSessions as PreviousSession[]) ?? []}
+      audioUrl={audioUrl}
     />
   );
 }
