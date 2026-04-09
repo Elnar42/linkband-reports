@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
 import { SessionReport, PreviousSession, TimelinePoint } from '@/types/report';
 import {
   LineChart,
@@ -259,6 +260,54 @@ export default function ReportClient({ report, previousSessions, audioUrl }: Pro
     { metric: 'Stress', Current: Math.round(report.final_stress ?? 0), 'Previous Avg': prevAvgStress },
   ];
 
+  // ── Audio playback ──────────────────────────────────────────────────────────
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onTimeUpdate = () => setAudioCurrentTime(audio.currentTime);
+    const onLoaded = () => setAudioDuration(audio.duration || 0);
+    const onEnded = () => setIsPlaying(false);
+    audio.addEventListener('timeupdate', onTimeUpdate);
+    audio.addEventListener('loadedmetadata', onLoaded);
+    audio.addEventListener('durationchange', onLoaded);
+    audio.addEventListener('ended', onEnded);
+    return () => {
+      audio.removeEventListener('timeupdate', onTimeUpdate);
+      audio.removeEventListener('loadedmetadata', onLoaded);
+      audio.removeEventListener('durationchange', onLoaded);
+      audio.removeEventListener('ended', onEnded);
+    };
+  }, []);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) { audio.pause(); setIsPlaying(false); }
+    else { audio.play().catch(() => {}); setIsPlaying(true); }
+  };
+
+  const seekTo = (seconds: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = Math.max(0, seconds);
+    setAudioCurrentTime(Math.max(0, seconds));
+  };
+
+  const formatAudioTime = (s: number) => {
+    if (!isFinite(s) || isNaN(s) || s === 0) return '0:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  // x-axis is in minutes; keep the cursor in the same unit
+  const cursorMins = audioCurrentTime / 60;
+
   return (
     <div className="min-h-screen bg-[#F7F8FB] font-sans">
 
@@ -342,46 +391,112 @@ export default function ReportClient({ report, previousSessions, audioUrl }: Pro
           <section>
             <SectionHeader
               title="Performance Timeline"
-              subtitle="Brain state metrics recorded minute-by-minute throughout the session"
+              subtitle={
+                audioUrl
+                  ? 'Click anywhere on the chart to jump to that moment in the recording'
+                  : 'Brain state metrics recorded minute-by-minute throughout the session'
+              }
             />
             <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
-              <ResponsiveContainer width="100%" height={240}>
-                <LineChart
-                  data={chartData}
-                  margin={{ top: 8, right: 8, bottom: 4, left: -20 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis
-                    dataKey="time"
-                    tick={{ fontSize: 10, fill: '#9ca3af' }}
-                    tickFormatter={(v) => `${v}m`}
-                    axisLine={{ stroke: '#e5e7eb' }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    domain={[0, 100]}
-                    tick={{ fontSize: 10, fill: '#9ca3af' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend
-                    wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }}
-                  />
-                  <Line type="monotone" dataKey="focus" stroke="#4F46E5" strokeWidth={2} dot={false} name="Focus" />
-                  <Line type="monotone" dataKey="stress" stroke="#ef4444" strokeWidth={2} dot={false} name="Stress" />
-                  <Line type="monotone" dataKey="calm" stroke="#10b981" strokeWidth={2} dot={false} name="Calm" />
-                  <Line
-                    type="monotone"
-                    dataKey="cogLoad"
-                    stroke="#8b5cf6"
-                    strokeWidth={1.5}
-                    dot={false}
-                    strokeDasharray="4 3"
-                    name="Cognitive Load"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {/* Chart — clickable when audio is present */}
+              <div style={{ cursor: audioUrl ? 'pointer' : 'default' }}>
+                <ResponsiveContainer width="100%" height={240}>
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 8, right: 8, bottom: 4, left: -20 }}
+                    onClick={audioUrl ? (data: any) => {
+                      const t = data?.activePayload?.[0]?.payload?.time;
+                      if (t != null) seekTo(t * 60);
+                    } : undefined}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis
+                      type="number"
+                      dataKey="time"
+                      domain={['dataMin', 'dataMax']}
+                      tick={{ fontSize: 10, fill: '#9ca3af' }}
+                      tickFormatter={(v) => `${Math.round(v)}m`}
+                      axisLine={{ stroke: '#e5e7eb' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      domain={[0, 100]}
+                      tick={{ fontSize: 10, fill: '#9ca3af' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                    <Line type="monotone" dataKey="focus" stroke="#4F46E5" strokeWidth={2} dot={false} name="Focus" />
+                    <Line type="monotone" dataKey="stress" stroke="#ef4444" strokeWidth={2} dot={false} name="Stress" />
+                    <Line type="monotone" dataKey="calm" stroke="#10b981" strokeWidth={2} dot={false} name="Calm" />
+                    <Line
+                      type="monotone"
+                      dataKey="cogLoad"
+                      stroke="#8b5cf6"
+                      strokeWidth={1.5}
+                      dot={false}
+                      strokeDasharray="4 3"
+                      name="Cognitive Load"
+                    />
+                    {/* Playback cursor — moves as audio plays */}
+                    {audioUrl && (
+                      <ReferenceLine
+                        x={cursorMins}
+                        stroke="#6366f1"
+                        strokeWidth={2}
+                        strokeDasharray="4 3"
+                        label={{ value: '▶', fill: '#6366f1', fontSize: 10, position: 'insideTopRight' }}
+                      />
+                    )}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Audio player — only when a recording exists */}
+              {audioUrl && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <audio ref={audioRef} src={audioUrl} preload="metadata" className="hidden" />
+                  <div className="flex items-center gap-3">
+                    {/* Play / Pause */}
+                    <button
+                      onClick={togglePlay}
+                      className="w-9 h-9 rounded-full bg-indigo-600 hover:bg-indigo-700 flex items-center justify-center shrink-0 transition-colors"
+                      aria-label={isPlaying ? 'Pause' : 'Play'}
+                    >
+                      {isPlaying ? (
+                        <svg width="11" height="11" viewBox="0 0 11 11" fill="white">
+                          <rect x="1.5" y="1" width="3" height="9" rx="1" />
+                          <rect x="6.5" y="1" width="3" height="9" rx="1" />
+                        </svg>
+                      ) : (
+                        <svg width="11" height="11" viewBox="0 0 11 11" fill="white">
+                          <path d="M2.5 1.5l7 4-7 4V1.5z" />
+                        </svg>
+                      )}
+                    </button>
+
+                    {/* Seek bar */}
+                    <div className="flex-1">
+                      <input
+                        type="range"
+                        min={0}
+                        max={audioDuration || 1}
+                        step={0.5}
+                        value={audioCurrentTime}
+                        onChange={(e) => seekTo(Number(e.target.value))}
+                        className="w-full accent-indigo-600 cursor-pointer"
+                        style={{ height: '4px' }}
+                      />
+                    </div>
+
+                    {/* Time */}
+                    <span className="text-xs text-gray-400 tabular-nums shrink-0">
+                      {formatAudioTime(audioCurrentTime)} / {formatAudioTime(audioDuration)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         )}
